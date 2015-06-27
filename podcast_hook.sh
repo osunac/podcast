@@ -2,8 +2,6 @@
 #
 # podcast.sh hooks example file
 
-echo "podcast_hook.sh $1 $PODCAST_FEED $PODCAST_URL $PODCAST_FILE" 1>&2
-
 die() {
     echo "$1" 1>&2
     exit 1

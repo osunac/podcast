@@ -249,7 +249,6 @@ function download()
 {
     while read url; do
         [ -z "$url" ] && continue
-        echo "file=\$(basename $url)"
         file=$(basename $url)
         if [ ! -r "$2/$file" ]; then
             export PODCAST_FEED="$1"
