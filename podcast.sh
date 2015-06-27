@@ -8,10 +8,13 @@
 # Configuration is done with an INI file assumed to be self-descriptive for
 # the most part (see example below). The only mandatory feed option is the
 # url, the other options can be inferred from the name or the global options.
-# A hook program can be called after each file download, in that case the
-# following environment variables are set:
+# A hook program can be called before or after each file download, in that
+# case the following environment variables are set:
 #  - PODCAST_FEED: feed identifier
+#  - PODCAST_URL:  download URL
 #  - PODCAST_FILE: path to the file that has just been downloaded
+# If the pre-download hook exits with an error code, the file is not
+# downloaded.
 #
 # Dependencies:
 #  - bash
@@ -29,7 +32,10 @@
 #  media = /home/user/media/podcast
 #  default_max_size_mb = 100
 #  feeds = feed1 feed2
-#  hook = logger "podcast.sh: downloaded ${PODCAST_FILE}"
+#
+#  [hooks]
+#  pre  = podcast_check.sh
+#  post = logger "podcast.sh: downloaded ${PODCAST_FILE}"
 #
 #  [feed1]
 #  url  = http://example.org/feed1
@@ -62,7 +68,8 @@
 config=
 media=
 default_max_size=
-hook=
+hook_pre=
+hook_post=
 
 # die MESSAGE
 # Print error MESSAGE and exit with error code
@@ -145,7 +152,8 @@ function read_global_config()
 {
     media=$(read_ini_value $1 global media)
     default_max_size=$(read_ini_value $1 global default_max_size_mb)
-    hook=$(read_ini_value $1 global hook)
+    hook_pre=$(read_ini_value $1 hooks pre)
+    hook_post=$(read_ini_value $1 hooks post)
 }
 
 # remove_excess_files DIRECTORY MAX_SIZE
@@ -220,8 +228,11 @@ function filter_audio()
 
 # filter_empty_list_when ITEM
 # Empty begining of a list when ITEM is found
+# If ITEM is empty, data is simply forwarded
 function filter_empty_list_when()
 {
+    [ -z "$1" ] && cat
+
     awk -v magic="$1" '
 $0 ~ magic { buffer = "" }
            { if (buffer != "") buffer = buffer "\n"
@@ -232,19 +243,26 @@ END        { print buffer }
 
 # download FEED DIRECTORY
 # Download files from FEED to DIRECTORY if they do not already exist
+# Pre-download hook checks whether to skip download and post-download hook is
+# called when download is completed
 function download()
 {
     while read url; do
+        [ -z "$url" ] && continue
+        echo "file=\$(basename $url)"
         file=$(basename $url)
         if [ ! -r "$2/$file" ]; then
+            export PODCAST_FEED="$1"
+            export PODCAST_URL="$url"
+            export PODCAST_FILE="$2/$file"
+
+            if [ -n "$hook_pre" ] && ! eval "$hook_pre"; then
+                    echo "  ($file)"
+                    continue
+            fi
             echo "  +$file"
             wget --quiet -O "$2/$file" $url
-            [ -n "$hook" ] &&
-                (
-                    export PODCAST_FEED="$1"
-                    export PODCAST_FILE="$2/file"
-                    eval "$hook"
-                )
+            [ -n "$hook_post" ] && eval "$hook_post"
         fi
     done
 }
